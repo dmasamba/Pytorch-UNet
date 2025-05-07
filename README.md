@@ -14,10 +14,9 @@ Customized implementation of the [U-Net](https://arxiv.org/abs/1505.04597) in Py
   - [With Docker](#with-docker)
 - [Description](#description)
 - [Usage](#usage)
-  - [Data Preparation](#data-preparation)
+  - [Docker](#docker)
   - [Training](#training)
   - [Prediction](#prediction)
-  - [Docker](#docker)
 - [Weights & Biases](#weights--biases)
 - [Pretrained model](#pretrained-model)
 - [Data](#data)
@@ -76,83 +75,80 @@ It can be easily used for multiclass segmentation, portrait segmentation, medica
 ## Usage
 **Note : Use Python 3.6 or newer**
 
-### Data Preparation
-
-1. **Download the data**  
-   Download your dataset and place the images and masks in `data/imgs` and `data/masks` respectively.  
-   For Carvana, use the helper script:
-   ```bash
-   bash scripts/download_data.sh
-   ```
-
-2. **Clean missing images**  
-   Ensure that every image has a corresponding mask and vice versa.  
-   You can use a script like:
-   ```python
-   # clean_missing.py
-   import os
-   imgs = set(os.path.splitext(f)[0] for f in os.listdir('data/imgs'))
-   masks = set(os.path.splitext(f)[0] for f in os.listdir('data/masks'))
-   missing_imgs = masks - imgs
-   missing_masks = imgs - masks
-   for f in missing_imgs:
-       print(f"Missing image for mask: {f}")
-   for f in missing_masks:
-       print(f"Missing mask for image: {f}")
-   ```
-   Remove or fix any missing pairs before proceeding.
-
-3. **Generate k-fold splits**  
-   To use k-fold cross-validation, generate split files for each fold:
-   ```python
-   # generate_kfold.py
-   import os, random
-   from sklearn.model_selection import KFold
-   img_dir = 'data/imgs'
-   all_ids = [os.path.splitext(f)[0] for f in os.listdir(img_dir) if not f.startswith('.')]
-   k = 5
-   kf = KFold(n_splits=k, shuffle=True, random_state=42)
-   for fold, (train_idx, val_idx) in enumerate(kf.split(all_ids)):
-       with open(f'data/train_new{fold}.txt', 'w') as f:
-           for idx in train_idx:
-               f.write(all_ids[idx] + '\n')
-       with open(f'data/valid_new{fold}.txt', 'w') as f:
-           for idx in val_idx:
-               f.write(all_ids[idx] + '\n')
-   ```
-   This will create `train_new{fold}.txt` and `valid_new{fold}.txt` for each fold.
-
-### Training
-
-Train the model using k-fold cross-validation:
-```bash
-python train.py --num-folds 5 --epochs 5 --batch-size 4 --amp
-```
-- `--num-folds`: Number of folds for cross-validation (default: 5)
-- `--amp`: Use automatic mixed precision for faster and memory-efficient training
-- Other options: `--learning-rate`, `--scale`, `--classes`, etc.
-
-**Notes:**
-- The code will automatically use the k-fold split files (`train_new{fold}.txt`, `valid_new{fold}.txt`).
-- Images are normalized to zero mean and unit variance per slice.
-- Training and validation progress is logged to Weights & Biases (wandb).
-
-### Prediction
-
-After training, you can predict masks for new images:
-```bash
-python predict.py -m MODEL.pth -i image1.png image2.png --viz
-```
-See `python predict.py -h` for all options.
-
 ### Docker
 
-A docker image containing the code and dependencies is available:
-```bash
+A docker image containing the code and the dependencies is available on [DockerHub](https://hub.docker.com/repository/docker/milesial/unet).
+You can download and jump in the container with ([docker >=19.03](https://docs.docker.com/get-docker/)):
+
+```console
 docker run -it --rm --shm-size=8g --ulimit memlock=-1 --gpus all milesial/unet
 ```
 
----
+
+### Training
+
+```console
+> python train.py -h
+usage: train.py [-h] [--epochs E] [--batch-size B] [--learning-rate LR]
+                [--load LOAD] [--scale SCALE] [--validation VAL] [--amp]
+
+Train the UNet on images and target masks
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --epochs E, -e E      Number of epochs
+  --batch-size B, -b B  Batch size
+  --learning-rate LR, -l LR
+                        Learning rate
+  --load LOAD, -f LOAD  Load model from a .pth file
+  --scale SCALE, -s SCALE
+                        Downscaling factor of the images
+  --validation VAL, -v VAL
+                        Percent of the data that is used as validation (0-100)
+  --amp                 Use mixed precision
+```
+
+By default, the `scale` is 0.5, so if you wish to obtain better results (but use more memory), set it to 1.
+
+Automatic mixed precision is also available with the `--amp` flag. [Mixed precision](https://arxiv.org/abs/1710.03740) allows the model to use less memory and to be faster on recent GPUs by using FP16 arithmetic. Enabling AMP is recommended.
+
+
+### Prediction
+
+After training your model and saving it to `MODEL.pth`, you can easily test the output masks on your images via the CLI.
+
+To predict a single image and save it:
+
+`python predict.py -i image.jpg -o output.jpg`
+
+To predict a multiple images and show them without saving them:
+
+`python predict.py -i image1.jpg image2.jpg --viz --no-save`
+
+```console
+> python predict.py -h
+usage: predict.py [-h] [--model FILE] --input INPUT [INPUT ...] 
+                  [--output INPUT [INPUT ...]] [--viz] [--no-save]
+                  [--mask-threshold MASK_THRESHOLD] [--scale SCALE]
+
+Predict masks from input images
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --model FILE, -m FILE
+                        Specify the file in which the model is stored
+  --input INPUT [INPUT ...], -i INPUT [INPUT ...]
+                        Filenames of input images
+  --output INPUT [INPUT ...], -o INPUT [INPUT ...]
+                        Filenames of output images
+  --viz, -v             Visualize the images as they are processed
+  --no-save, -n         Do not save the output masks
+  --mask-threshold MASK_THRESHOLD, -t MASK_THRESHOLD
+                        Minimum probability value to consider a mask pixel white
+  --scale SCALE, -s SCALE
+                        Scale factor for the input images
+```
+You can specify which model file to use with `--model MODEL.pth`.
 
 ## Weights & Biases
 
