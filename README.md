@@ -2,7 +2,7 @@
 
 *A representative error map produced by our pipeline.* 
 
-![Error Map Example](error_vis/('study_0255_14.npy',).png)  
+![Error Map Example](assets/study_0255_14.npy.png)  
  
 
 ---
