@@ -153,16 +153,6 @@ Generates:
 - `plots/specificity_boxplot.png`  
 - `plots/hausdorff_boxplot.png`  
 
-**Sample results (Table I):**
-
-| Metric      | Mean ± Std      |
-|-------------|-----------------|
-| Dice        | 0.5341 ± 0.1974 |
-| IoU         | 0.3884 ± 0.1804 |
-| Sensitivity | 0.9179 ± 0.1460 |
-| Specificity | 0.9944 ± 0.0057 |
-| Hausdorff   | 61.57 ± 51.01   |
-
 ---
 
 ## 👁️ Error-Map Visualization
