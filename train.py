@@ -19,12 +19,12 @@ from unet import UNet
 from utils.dice_score import dice_loss
 from evaluate import evaluate
 
-# ——— Paths ——————————————————————————————————————————————————————
+# Needed paths
 DIR_IMG        = Path('./data/imgs/')
 DIR_MASK       = Path('./data/masks/')
 DIR_CHECKPOINT = Path('./checkpoints/')
 
-# ——— Utilities ————————————————————————————————————————————————————
+# important utilities
 def read_split_file(split_file: str):
     ids = []
     with open(split_file, 'r') as f:
@@ -54,8 +54,11 @@ class CovidDataset(torch.utils.data.Dataset):
         self.flip        = flip
         self.augment     = augment
 
-        # color jitter for augmentations
-        self.color_jitter = T.ColorJitter(brightness=0.2, contrast=0.2)
+        # augmentations
+        self.max_rot = 10.0    # ±10° rotations
+        self.hflip   = True    # allow horizontal flips only
+        # color_jitter removed for now
+        # self.color_jitter = T.ColorJitter(brightness=0.2, contrast=0.2)
 
     def __len__(self):
         return len(self.img_ids)
@@ -65,15 +68,15 @@ class CovidDataset(torch.utils.data.Dataset):
         img = np.load(self.images_dir / f"{fid}.npy").astype(np.float32)
         msk = np.load(self.masks_dir  / f"{fid}.npy").astype(np.float32)
 
-        # 1) Lung‐window clip & scale to [0,1]
+        # Lung‐window clip & scale to [0,1]
         img = np.clip(img, -1000, 400)
         img = (img + 1000) / 1400.0
 
-        # 2) Global normalization if provided
+        # Global normalization if provided
         if self.global_mean is not None and self.global_std is not None:
             img = (img - self.global_mean) / (self.global_std + 1e-8)
 
-        # 3) Resize
+        # Resize
         if self.scale != 1.0:
             h, w = img.shape
             new_w = int(w * self.scale)
@@ -85,37 +88,31 @@ class CovidDataset(torch.utils.data.Dataset):
                 Image.fromarray(msk).resize((new_w, new_h), Image.NEAREST)
             )
 
-        # 4) Random flip
+        # Random flip
         if self.flip and random.random() > 0.5:
             img = np.flip(img, axis=1).copy()
             msk = np.flip(msk, axis=0).copy()
 
-        # 5) On-the-fly augmentation (unaligned PIL ops)
+        # augmentation on-the-fly 
         if self.augment:
             img_pil  = Image.fromarray((img * 255).astype(np.uint8))
             mask_pil = Image.fromarray((msk * 255).astype(np.uint8))
 
-            # a) unified random rotation
-            angle = random.uniform(-15, 15)
+            # unified random rotation
+            angle = random.uniform(-self.max_rot, self.max_rot)
             img_pil  = img_pil.rotate(angle,  resample=Image.BILINEAR)
             mask_pil = mask_pil.rotate(angle, resample=Image.NEAREST)
 
-            # b) unified random flips
-            if random.random() > 0.5:
+            # unified random horizontal flip only
+            if self.hflip and random.random() > 0.5:
                 img_pil  = img_pil.transpose(Image.FLIP_LEFT_RIGHT)
                 mask_pil = mask_pil.transpose(Image.FLIP_LEFT_RIGHT)
-            if random.random() > 0.5:
-                img_pil  = img_pil.transpose(Image.FLIP_TOP_BOTTOM)
-                mask_pil = mask_pil.transpose(Image.FLIP_TOP_BOTTOM)
-
-            # c) color jitter on image only
-            img_pil = self.color_jitter(img_pil)
 
             # back to numpy
             img = np.array(img_pil).astype(np.float32) / 255.0
             msk = (np.array(mask_pil) > 127).astype(np.uint8)
 
-        # 6) Add channel dim and convert to tensors
+        # Add channel dim and convert to tensors
         img = torch.from_numpy(img[None, ...]).float()
         msk = torch.from_numpy(msk).long()
 
@@ -164,7 +161,7 @@ def train_model_cv(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f"Using device: {device}")
 
-    # — compute global mean/std across all folds —
+    # compute global mean/std across all folds —
     all_ids = set()
     for f in range(args.num_folds):
         all_ids |= set(read_split_file(f"./data/train_new{f}.txt"))
